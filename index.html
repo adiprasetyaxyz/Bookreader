@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EPUB Reader JP — Jisho Online</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23112033'/%3E%3Ctext x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='%237aa2f7'%3EEP%3C/text%3E%3C/svg%3E">
-  <style>
+ <style>
   :root { --bg:#0b1020; --panel:#111833; --ink:#e7ecff; --muted:#a9b4d6; --accent:#7aa2f7; --ok:#79dba8; --warn:#ffcf6e; }
   *{box-sizing:border-box}
   body{margin:0;background:linear-gradient(180deg,#0b1020,#0f1730);color:var(--ink);font:14px/1.55 system-ui,Segoe UI,Roboto,Helvetica,Arial}
@@ -40,6 +40,22 @@
   pre.log{white-space:pre-wrap;word-break:break-word;background:#0b142c;border:1px solid #2b3b74;border-radius:10px;padding:.5rem;margin:.5rem 0;max-height:200px;overflow:auto}
   .testpass{color:#79dba8}
   .testfail{color:#ff9191}
+
+
+  /* [BARU] CSS untuk Tampilan Mobile */
+  @media (max-width: 800px) {
+    main {
+      grid-template-columns: 1fr; /* Ubah jadi 1 kolom */
+      padding: 8px;
+      gap: 8px;
+    }
+    aside, #viewerWrap {
+      min-height: 45vh; /* Sesuaikan tinggi agar tidak terlalu makan tempat */
+    }
+    .bar {
+      padding: .5rem; /* Kurangi padding di header */
+    }
+  }
   </style>
   <!-- CDN deps (bisa diganti file lokal untuk semi-offline) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
@@ -357,8 +373,45 @@ const r = await fetch(proxyUrl + encodeURIComponent(jishoUrl));
 
     // ---------- export ----------
     function toCsvField(s){ var x=String(s==null?'':s); if(/[",\n]/.test(x)) x='"'+x.replace(/"/g,'""')+'"'; return x; }
-    $('#exportCsvBtn').onclick=function(){ var lines=saved.map(e=>toCsvField(e.word)+','+toCsvField(e.meaning||'')); var blob=new Blob([lines.join('\n')],{type:'text/csv'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='jp_words.csv'; a.click(); };
-    $('#exportBtn').onclick=function(){ var header=['Word','Reading','Meaning','Book','CFI','SavedAt']; var rows=saved.map(e=>[e.word,e.reading||'',e.meaning||'',e.bookTitle||'',e.cfi||'', new Date(e.ts).toISOString()]); var tsv=[header.join('\t')].concat(rows.map(r=>r.map(s=>(s+'').replace(/\t/g,' ')).join('\t'))).join('\n'); var blob=new Blob([tsv],{type:'text/tab-separated-values'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='jp_words.tsv'; a.click(); };
+  // [GANTI KODE LAMA DENGAN INI]
+    $('#exportCsvBtn').onclick = function() {
+      if (saved.length === 0) {
+        alert('Tidak ada kata untuk diekspor.');
+        return;
+      }
+      try {
+        const header = ['Word', 'Reading', 'Meaning', 'Book', 'CFI', 'SavedAt'];
+        
+        // Ubah setiap objek di 'saved' menjadi baris CSV
+        const csvRows = saved.map(e => {
+          const row = [
+            e.word,
+            e.reading || '',
+            e.meaning || '',
+            e.bookTitle || '',
+            e.cfi || '',
+            new Date(e.ts).toISOString()
+          ];
+          return row.map(toCsvField).join(',');
+        });
+
+        // Gabungkan header dan semua baris data
+        const csvContent = [header.join(',')].concat(csvRows).join('\n');
+
+        // Tambahkan BOM untuk kompatibilitas Excel dengan karakter Jepang (UTF-8)
+        const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'jp_words.csv';
+        a.click();
+        URL.revokeObjectURL(a.href); // Membersihkan memori
+      } catch (err) {
+        logDiag('Export CSV error: ' + err.message);
+        alert('Gagal mengekspor CSV. Lihat log diagnostik.');
+      }
+    };    $('#exportBtn').onclick=function(){ var header=['Word','Reading','Meaning','Book','CFI']; var rows=saved.map(e=>[e.word,e.reading||'',e.meaning||'',e.bookTitle||'',e.cfi||'', new Date(e.ts).toISOString()]); var tsv=[header.join('\t')].concat(rows.map(r=>r.map(s=>(s+'').replace(/\t/g,' ')).join('\t'))).join('\n'); var blob=new Blob([tsv],{type:'text/tab-separated-values'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='jp_words.tsv'; a.click(); };
 
     function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m])); }
 
