@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EPUB Reader JP — Jisho Online</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23112033'/%3E%3Ctext x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='%237aa2f7'%3EEP%3C/text%3E%3C/svg%3E">
+  <style>
+  :root { --bg:#0b1020; --panel:#111833; --ink:#e7ecff; --muted:#a9b4d6; --accent:#7aa2f7; --ok:#79dba8; --warn:#ffcf6e; }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1020,#0f1730);color:var(--ink);font:14px/1.55 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  header{position:sticky;top:0;z-index:10;background:rgba(17,24,51,.9);backdrop-filter:blur(8px);border-bottom:1px solid #263056}
+  header .bar{display:flex;gap:.6rem;align-items:center;padding:.6rem 1rem;flex-wrap:wrap}
+  .file{display:inline-flex;align-items:center;gap:.5rem;padding:.45rem .7rem;background:#0b142c;border:1px solid #1f2b55;border-radius:10px}
+  button,.btn{cursor:pointer;border:1px solid #314070;background:#152046;color:var(--ink);padding:.45rem .7rem;border-radius:10px}
+  button:hover,.btn:hover{border-color:#4660ad}
+  .danger{border-color:#7b2b2b;background:#3a1616}
+  .ok{border-color:#2d6b49;background:#123224}
+  .muted{color:var(--muted)}
+  main{display:grid;grid-template-columns: 1fr 380px;gap:12px;padding:12px}
+  #viewerWrap{position:relative;border:1px solid #263056;border-radius:14px;overflow:hidden;background:#0a0f22;min-height:70vh}
+  #viewer{height:calc(100vh - 220px)}
+  #meta{padding:.5rem .75rem;border-bottom:1px solid #263056}
+  aside{border:1px solid #263056;border-radius:14px;overflow:hidden;background:#0a0f22;display:flex;flex-direction:column;min-height:70vh}
+  .sidehead{padding:.6rem .75rem;border-bottom:1px solid #263056;display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap}
+  #words{flex:1;overflow:auto}
+  .card{padding:.6rem .75rem;border-bottom:1px solid #1a2345}
+  .word{font-weight:700}
+  .mean{color:var(--muted)}
+  .tiny{font-size:12px;color:#90a0d0}
+  .controls{display:flex;gap:.4rem;flex-wrap:wrap}
+  .tooltip{position:absolute;transform:translate(-50%,8px);min-width:240px;max-width:min(420px,92vw);background:#101a37;border:1px solid #2b3b74;border-radius:12px;padding:.6rem;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:20}
+  .tooltip h4{margin:.1rem 0 .35rem 0}
+  .tooltip .row{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+  .tooltip .row input{flex:1;min-width:0}
+  input[type="text"], select{width:100%;border:1px solid #2b3b74;border-radius:10px;background:#0b142c;color:var(--ink);padding:.45rem .6rem}
+  .pill{padding:.1rem .45rem;border:1px solid #2b3b74;border-radius:999px;color:#b6c5ff}
+  .footer{padding:.5rem;text-align:center;color:#92a3d8}
+  .hint{font-size:12px;color:#8ca0de}
+  pre.log{white-space:pre-wrap;word-break:break-word;background:#0b142c;border:1px solid #2b3b74;border-radius:10px;padding:.5rem;margin:.5rem 0;max-height:200px;overflow:auto}
+  .testpass{color:#79dba8}
+  .testfail{color:#ff9191}
+  </style>
+  <!-- CDN deps (bisa diganti file lokal untuk semi-offline) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/epubjs@0.3.93/dist/epub.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <label class="file">📘 <input id="fileInput" type="file" accept=".epub" /> <span class="muted">Pilih EPUB</span></label>
+      <button id="prev">← Sebelumnya</button>
+      <button id="next">Berikutnya →</button>
+      <span class="pill" id="loc">Loc: -</span>
+      <span class="pill" id="bookTitle">—</span>
+    </div>
+    <div class="bar" style="gap:.9rem;border-top:1px solid #263056">
+      <span class="muted">Style:</span>
+      <select id="fontFamily" style="max-width:180px">
+        <option value="">Default</option>
+        <option value="'Noto Serif JP',serif">Noto Serif JP</option>
+        <option value="'Noto Sans JP',sans-serif">Noto Sans JP</option>
+        <option value="'Meiryo',sans-serif">Meiryo</option>
+        <option value="'Yu Mincho',serif">Yu Mincho</option>
+      </select>
+      <select id="fontSize" style="max-width:120px">
+        <option value="90%">90%</option><option value="100%" selected>100%</option>
+        <option value="110%">110%</option><option value="120%">120%</option>
+        <option value="140%">140%</option><option value="160%">160%</option>
+      </select>
+      <label class="muted">Text <input id="fontColor" type="color" value="#e7ecff" style="width:42px;height:28px;padding:0;border-radius:8px;border:1px solid #2b3b74;background:#0b142c"></label>
+
+      <span class="muted">Arti dalam:</span>
+      <select id="meaningLang" style="max-width:180px">
+        <option value="en">English (Jisho)</option>
+        <option value="id" selected>Indonesian (auto)</option>
+      </select>
+
+      <span class="muted">Export:</span>
+      <button id="exportCsvBtn" class="btn ok">CSV (Word,Definition)</button>
+      <button id="exportBtn" class="btn">TSV</button>
+      <button id="runTests" class="btn">Self-test</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="viewerWrap">
+      <div id="meta" class="status">
+        <span class="pill" id="libStatus">epub.js: cek…</span>
+        <span class="pill" id="bookStatus">buku: belum</span>
+      </div>
+      <div id="viewer"></div>
+      <div id="tooltip" class="tooltip" style="display:none;left:0;top:0"></div>
+    </section>
+
+    <aside>
+      <div class="sidehead">
+        <strong>Kosa Kata / Frasa</strong>
+        <div class="controls"><button id="clearBtn" class="btn danger">Hapus Semua</button></div>
+      </div>
+      <div id="words"></div>
+      <div class="footer hint">
+        <div id="testLog">Belum menjalankan self-test.</div>
+        <pre class="log" id="diag" aria-live="polite"></pre>
+        Data disimpan di <strong>LocalStorage</strong>.
+      </div>
+    </aside>
+  </main>
+
+  <script>
+  (function(){ 'use strict';
+    // ---------- utilities ----------
+    function $(s, el){ return (el||document).querySelector(s); }
+    var tooltip=$('#tooltip'), diag=$('#diag');
+    function logDiag(msg){ diag.textContent += '['+new Date().toLocaleTimeString()+'] '+msg+'\n'; diag.scrollTop=diag.scrollHeight; }
+    function setBadge(el,txt){ el.textContent=txt; }
+
+    window.addEventListener('error', e => logDiag('window.onerror: '+(e.error?.message || e.message || e)));
+    window.addEventListener('unhandledrejection', e => logDiag('unhandledrejection: '+(e.reason?.message || e.reason || '')));
+
+    // ---------- TinySegmenter (mini) ----------
+    function TinySegmenter(){ this.BIAS=-332; this.BC1={'は':3537,'て':3744,'が':1468,'に':573,'を':4051,'だ':1711,'で':1311,'と':1316,'し':3441,'、':-3000,'。':-3000}; this.BC2={'う':-392,'い':-413,'き':-485,'し':-253,'る':-98,'な':-239,'の':-185,'ん':-256,'っ':-131}; this.BCC={'いる':-1180,'する':-2300,'なる':-2150,'こと':-2550}; this.CHAR1={'一':247,'人':98,'年':-79,'国':-74}; }
+    TinySegmenter.prototype.SCORE=function(p,c,n){ var s=this.BIAS; if(this.BC1[c]) s+=this.BC1[c]; if(this.BC2[p]) s+=this.BC2[p]; var tri=(p||'')+(c||''); if(this.BCC[tri]) s+=this.BCC[tri]; if(this.CHAR1[c]) s+=this.CHAR1[c]; return s; };
+    TinySegmenter.prototype.segment=function(str){ if(!str) return []; var res=[],buf=''; for(var i=0;i<str.length;i++){ buf+=str.charAt(i); if(this.SCORE(str.charAt(i-1),str.charAt(i),str.charAt(i+1))>0){ res.push(buf); buf=''; } } if(buf) res.push(buf); var out=[]; for(var k=0;k<res.length;k++){ var parts=res[k].split(/[\u3000\s\.,、。！？!?\-・「」『』（）()\[\]…]+/); for(var j=0;j<parts.length;j++){ var t=parts[j]; if(t) out.push(t); } } return out; };
+
+    // ---------- loader guards ----------
+    function loadScript(src){ return new Promise(function(resolve, reject){ var s=document.createElement('script'); s.src=src; s.async=true; s.crossOrigin='anonymous'; s.onload=() => resolve(); s.onerror=() => reject(new Error('Gagal memuat '+src)); document.head.appendChild(s); }); }
+    async function ensureEpubJs(){
+      if(window.JSZip && typeof window.ePub==='function'){ setBadge($('#libStatus'),'epub.js: siap'); return true; }
+      if(!window.JSZip){ setBadge($('#libStatus'),'jszip: memuat…'); try{ await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'); }catch(e){ logDiag('JSZip gagal: '+e.message); setBadge($('#libStatus'),'jszip: gagal'); return false; } }
+      if(typeof window.ePub!=='function'){ setBadge($('#libStatus'),'epub.js: memuat…'); try{ await loadScript('https://unpkg.com/epubjs@0.3.93/dist/epub.js'); }catch(e){ logDiag('epub.js gagal: '+e.message); setBadge($('#libStatus'),'epub.js: gagal'); return false; } }
+      setBadge($('#libStatus'),'epub.js: siap'); return true;
+    }
+
+    // ---------- app state ----------
+    var book, rendition, currentContents=null, bookTitle='—', currentBookKey=null, suppressClickUntil=0;
+    var saved = JSON.parse(localStorage.getItem('jp_epub_words')||'[]');
+    renderSaved(); wireSavedHandlers();
+
+    // ---------- file load ----------
+    $('#fileInput').addEventListener('change', async function(e){
+      var ok=await ensureEpubJs(); if(!ok){ alert('epub.js/JSZip gagal dimuat'); return; }
+      var file=e.target.files[0]; if(!file) return;
+      try{
+        var ab=await file.arrayBuffer();
+        currentBookKey=(file.name||'unknown')+':'+(file.size||0);
+        book=ePub(ab);
+        rendition=book.renderTo('viewer',{width:'100%',height:'100%',spread:'none',allowScriptedContent:true});
+        await rendition.display();
+        // restore last pos
+        try{ var last=localStorage.getItem('jp_epub_lastpos_'+currentBookKey); if(last){ await rendition.display(last); } }catch(_){}
+        setBadge($('#bookStatus'),'buku: dimuat');
+        book.loaded.metadata.then(meta => { bookTitle=(meta&&meta.title)||file.name||'—'; $('#bookTitle').textContent=bookTitle; });
+        applyTheme();
+        rendition.on('rendered', (section, view) => { currentContents=view||section; wireContentClicks(currentContents); var loc=rendition.currentLocation(); updateLoc(loc); });
+        rendition.on('relocated', (loc) => { updateLoc(loc); try{ var c=(loc && loc.start && loc.start.cfi) ? loc.start.cfi : (loc && loc.cfi); if(c) localStorage.setItem('jp_epub_lastpos_'+currentBookKey, c); }catch(_e){} });
+      }catch(err){ logDiag('load epub: '+err.message); alert('Gagal memuat buku. Lihat Diagnostics.'); }
+    });
+
+    // ---------- navigation ----------
+    $('#prev').onclick=function(){ if(rendition) rendition.prev(); };
+    $('#next').onclick=function(){ if(rendition) rendition.next(); };
+    function updateLoc(loc){ if(!loc) return; var cur=loc.start||loc; $('#loc').textContent=cur.cfi||'-'; }
+
+    // ---------- theme ----------
+    $('#fontFamily').addEventListener('change', applyTheme);
+    $('#fontSize').addEventListener('change', applyTheme);
+    $('#fontColor').addEventListener('input', applyTheme);
+    function applyTheme(){ if(!rendition) return;
+      var fam=$('#fontFamily').value||null, size=$('#fontSize').value||'100%', color=$('#fontColor').value||'#e7ecff';
+      try{ rendition.themes.register('user',{'body':{'font-family':fam?fam:'inherit','font-size':size,'color':color,'line-height':'1.8'}}); rendition.themes.select('user'); }catch(e){ logDiag('theme error: '+e.message); }
+    }
+
+    // ---------- selection & click ----------
+    function wireContentClicks(contents){
+      var doc=contents.document; if(!doc) return;
+      // drag-select phrases
+      doc.addEventListener('mouseup', function(ev){
+        try{
+          var sel = doc.getSelection ? doc.getSelection() : (contents.window && contents.window.getSelection && contents.window.getSelection());
+          if(!sel || sel.rangeCount===0) return;
+          var text=String(sel.toString()).trim(); if(!text) return;
+          suppressClickUntil=Date.now()+240;
+          var range=sel.getRangeAt(0);
+          var cfi='—'; try{ cfi=contents.cfiFromRange(range)||'—'; }catch(_){}
+          var node=range.startContainer; var base=node && node.textContent ? node.textContent : text;
+          var ctx=base.slice(Math.max(0,range.startOffset-20), Math.min(base.length, range.endOffset+20));
+          var rect={left:ev.clientX, top:ev.clientY};
+          showTooltip(rect,{token:text, ctx:ctx, cfi:cfi});
+          lookupMeaning(text).then(look => fillTooltipMeaning({reading:look.reading, meaning:look.meaning}));
+        }catch(err){ logDiag('mouseup: '+err.message); }
+      });
+
+      // single click -> token
+      doc.addEventListener('click', async function(ev){
+        if(Date.now()<suppressClickUntil) return;
+        try{
+          var pos=getCaretRangeFromPoint(doc, ev.clientX, ev.clientY); if(!pos||!pos.startContainer) return;
+          var node=closestTextNode(pos.startContainer); if(!node) return;
+          var text=node.textContent||''; var offset=pos.startOffset;
+          var seg=new TinySegmenter().segment(text); var bounds=buildBoundaries(seg); var idx=findTokenIndex(bounds,offset);
+          var token=(seg[idx]||'').trim(); if(!token) return; if(/^[、。・…！？!?,.\-\s]$/.test(token)) return;
+          var cfi='—'; try{ cfi=contents.cfiFromRange(pos)||'—'; }catch(_){}
+          var ctx=extractContext(text,bounds,idx);
+          var rect={left:ev.clientX, top:ev.clientY};
+          showTooltip(rect,{token:token, ctx:ctx, cfi:cfi});
+          var looked=await lookupMeaning(token); fillTooltipMeaning({reading:looked.reading, meaning:looked.meaning});
+        }catch(err){ logDiag('click: '+err.message); }
+      }, true);
+
+      doc.addEventListener('keydown', function(e){ try{ if(tooltip.style.display==='none') return; if(e.key==='Escape') hideTooltip(); if((e.key||'').toLowerCase()==='s'){ var sb=$('#saveBtn'); if(sb) sb.click(); } }catch(err){ logDiag('keydown: '+err.message); } });
+    }
+
+    function getCaretRangeFromPoint(doc,x,y){ if(doc.caretPositionFromPoint){ var p=doc.caretPositionFromPoint(x,y); if(!p) return null; var r=doc.createRange(); r.setStart(p.offsetNode,p.offset); r.collapse(true); return r; } if(doc.caretRangeFromPoint){ return doc.caretRangeFromPoint(x,y); } return null; }
+    function closestTextNode(node){ if(!node) return null; if(node.nodeType===3) return node; var w=node.ownerDocument.createTreeWalker(node, NodeFilter.SHOW_TEXT, null); return w.nextNode(); }
+    function buildBoundaries(tokens){ var a=[],acc=0; for(var i=0;i<tokens.length;i++){ var t=tokens[i]; var s=acc; var e=s+t.length; a.push([s,e]); acc=e; } return a; }
+    function findTokenIndex(bounds,offset){ for(var i=0;i<bounds.length;i++){ if(offset>=bounds[i][0] && offset<bounds[i][1]) return i; } var best=0,d=1e9; for(var j=0;j<bounds.length;j++){ var mid=(bounds[j][0]+bounds[j][1])/2; var dd=Math.abs(offset-mid); if(dd<d){d=dd;best=j;} } return best; }
+    function extractContext(text,bounds,idx){ var b=bounds[idx]||[0, Math.min(16,text.length)]; var L=Math.max(0,b[0]-20), R=Math.min(text.length,b[1]+20); return text.slice(L,R).replace(/[\n\r]+/g,' ').trim(); }
+
+    // ---------- tooltip ----------
+    function showTooltip(point,data){
+      tooltip.style.display='block';
+      var wrapRect=$('#viewerWrap').getBoundingClientRect();
+      var x=point.left-wrapRect.left, y=point.top-wrapRect.top;
+      tooltip.innerHTML =
+       '<h4>🔎 <span id="tok">'+escapeHtml(data.token)+'</span></h4>'+
+       '<div class="hint tiny">CFI: <span id="cfi">'+escapeHtml(data.cfi||'—')+'</span></div>'+
+       '<div class="row" style="margin:.35rem 0 .25rem"><input id="reading" type="text" placeholder="Furigana / Reading"></div>'+
+       '<div class="row" style="margin:.25rem 0 .35rem"><input id="meaning" type="text" placeholder="Arti (otomatis)"></div>'+
+       '<div class="hint tiny">Konteks: '+escapeHtml(data.ctx||'')+'</div>'+
+       '<div class="row" style="margin-top:.5rem;gap:.5rem">'+
+         '<button id="saveBtn" class="btn ok">Simpan (S)</button>'+
+         '<button id="closeBtn" class="btn">Tutup (Esc)</button>'+
+       '</div>';
+      // keep in bounds
+      requestAnimationFrame(function(){
+        var w=tooltip.offsetWidth, h=tooltip.offsetHeight;
+        if(x+w > wrapRect.width-10) x = Math.max(10, wrapRect.width - w - 10);
+        if(y+h > wrapRect.height-10) y = Math.max(10, wrapRect.height - h - 10);
+        if(x<10) x=10; if(y<10) y=10;
+        tooltip.style.left=x+'px'; tooltip.style.top=y+'px';
+      });
+      $('#closeBtn').onclick=hideTooltip; $('#saveBtn').onclick=function(){ saveCurrent(); };
+    }
+    function fillTooltipMeaning(o){ var r=$('#reading'); if(r) r.value=o.reading||''; var m=$('#meaning'); if(m) m.value=o.meaning||''; }
+    function hideTooltip(){ tooltip.style.display='none'; tooltip.innerHTML=''; }
+
+// ---------- lookup via Jisho (online) ----------
+    async function lookupMeaning(word){
+      const target = ($('#meaningLang') && $('#meaningLang').value) || 'id';
+      const q = (word||'').trim().replace(/[　\s]+/g,'');
+      if(!q) return { reading: '', meaning: '' };
+
+      let reading = '';
+      let meaningEN = '';
+
+      // 1) Jisho API call
+      try{
+        // Baris BARU
+const proxyUrl = 'https://api.allorigins.win/raw?url=';
+const jishoUrl = 'https://jisho.org/api/v1/search/words?keyword='+encodeURIComponent(q);
+const r = await fetch(proxyUrl + encodeURIComponent(jishoUrl));
+        if(r.ok){
+          const jishoResult = await r.json();
+          if(jishoResult && jishoResult.data && jishoResult.data.length > 0){
+            // Pilih entri dengan skor match terbaik (lebih cerdas)
+            const pick = jishoResult.data.map(d => {
+              const ks=(d.japanese||[]).map(x=>x.word).filter(Boolean);
+              const rs=(d.japanese||[]).map(x=>x.reading).filter(Boolean);
+              const sc=(ks.includes(q)?10:0)+(rs.includes(q)?8:0)+(ks.some(x=>x&&x.includes(q))?5:0)+(rs.some(x=>x&&x.includes(q))?3:0);
+              return {d, sc};
+            }).sort((a,b)=>b.sc-a.sc)[0].d;
+
+            // [FIX 1] Cari furigana yang paling relevan, tidak hanya ambil yang pertama
+            const relevantJp = (pick.japanese || []).find(j => j.word === q) || (pick.japanese && pick.japanese[0]);
+            if (relevantJp) {
+              reading = relevantJp.reading || '';
+            }
+
+            // [FIX 2] Kumpulkan arti dari semua 'senses', tidak hanya yang pertama
+            const allSenses = (pick.senses || []).flatMap(s => s.english_definitions || []);
+            meaningEN = allSenses.slice(0, 4).join('; ');
+          }
+        }
+      }catch(e){ logDiag('Jisho error: '+e.message); }
+
+      // 2) fallback bacaan untuk 1 kanji
+      if(!reading && /^[一-龯]$/.test(q)){
+        try{
+          const r2 = await fetch('https://kanjiapi.dev/v1/kanji/'+encodeURIComponent(q));
+          if(r2.ok){
+            const kj = await r2.json();
+            if(kj){
+              if(kj.kun_readings && kj.kun_readings.length){ reading = kj.kun_readings.slice(0,3).join('・'); }
+              else if(kj.on_readings && kj.on_readings.length){ reading = kj.on_readings.slice(0,3).join('・'); }
+              if(!meaningEN && kj.meanings && kj.meanings.length){ meaningEN = kj.meanings.slice(0,3).join('; '); }
+            }
+          }
+        }catch(e){ logDiag('KanjiAPI error: '+e.message); }
+      }
+
+      // 3) Tentukan output berdasarkan bahasa target
+      if(target === 'en'){
+        return { reading: reading || '', meaning: meaningEN || '' };
+      }
+
+      // Untuk ID, terjemahkan dari EN jika ada, jika tidak, dari JA
+      if (!meaningEN && !reading) { // Jika tidak ada info sama sekali
+        return { reading: '', meaning: '' };
+      }
+      let meaningID = '';
+      try{
+        const srcText = meaningEN || q;
+        const fromLang = meaningEN ? 'en' : 'ja';
+        meaningID = await translateText(srcText, fromLang, 'id');
+      }catch(e){ logDiag('Translate error: '+e.message); }
+      return { reading: reading || '', meaning: meaningID || '' };
+    }
+    // Free translator (bisa diganti layanan lain)
+    async function translateText(text, from, to){
+      const url='https://api.mymemory.translated.net/get?q='+encodeURIComponent(text)+'&langpair='+encodeURIComponent(from+'|'+to);
+      try{ const r=await fetch(url); if(!r.ok) return ''; const j=await r.json(); return (j&&j.responseData&&j.responseData.translatedText)||''; }catch(_){ return ''; }
+    }
+
+    // ---------- saved ----------
+    function saveCurrent(){
+      var token=($('#tok')&&$('#tok').textContent)||'';
+      var reading=($('#reading')&&$('#reading').value)||'';
+      var meaning=($('#meaning')&&$('#meaning').value)||'';
+      var cfi=($('#cfi')&&$('#cfi').textContent)||'';
+      if(!token) return;
+      var entry={word:token,reading:reading,meaning:meaning,cfi:cfi,bookTitle:bookTitle,ts:Date.now()};
+      saved.unshift(entry);
+      localStorage.setItem('jp_epub_words', JSON.stringify(saved));
+      renderSaved();
+      setTimeout(hideTooltip, 120);
+    }
+    function buildSavedHTML(list){
+      if(!list.length) return '<div class="card hint">Belum ada kata/frasa tersimpan. Drag-select frasa atau klik kata untuk menyimpan.</div>';
+      var out=''; for(var i=0;i<list.length;i++){
+        var e=list[i]; var when=new Date(e.ts).toLocaleString(); var cfiAttr=escapeHtml(e.cfi||'');
+        out+='<div class="card">'
+           +  '<div class="word">'+escapeHtml(e.word)+' <span class="mean">'+escapeHtml(e.reading||'')+'</span></div>'
+           +  '<div class="mean">'+escapeHtml(e.meaning||'')+'</div>'
+           +  '<div class="tiny">'+escapeHtml(e.bookTitle||'')+' · '+when+'</div>'
+           +  '<div class="controls" style="margin-top:.4rem">'
+           +     '<button class="btn jump" data-cfi="'+cfiAttr+'">Buka di Buku</button>'
+           +     '<button class="btn danger del" data-index="'+i+'">Hapus</button>'
+           +  '</div>'
+           +'</div>';
+      } return out;
+    }
+    function renderSaved(){ $('#words').innerHTML=buildSavedHTML(saved); }
+    $('#clearBtn').onclick=function(){ if(confirm('Hapus semua kata tersimpan?')){ saved=[]; localStorage.setItem('jp_epub_words','[]'); renderSaved(); } };
+    function wireSavedHandlers(){ $('#words').addEventListener('click', function(ev){ var j=ev.target.closest && ev.target.closest('.jump'); var d=ev.target.closest && ev.target.closest('.del'); if(j){ jumpTo(j.dataset.cfi||''); return; } if(d){ var idx=Number(d.dataset.index||'-1'); if(idx>-1){ saved.splice(idx,1); localStorage.setItem('jp_epub_words', JSON.stringify(saved)); renderSaved(); } } }); }
+    function jumpTo(cfi){ try{ if(rendition && cfi && cfi!=='—') rendition.display(cfi); }catch(e){ logDiag('jumpTo: '+e.message); } }
+
+    // ---------- export ----------
+    function toCsvField(s){ var x=String(s==null?'':s); if(/[",\n]/.test(x)) x='"'+x.replace(/"/g,'""')+'"'; return x; }
+    $('#exportCsvBtn').onclick=function(){ var lines=saved.map(e=>toCsvField(e.word)+','+toCsvField(e.meaning||'')); var blob=new Blob([lines.join('\n')],{type:'text/csv'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='jp_words.csv'; a.click(); };
+    $('#exportBtn').onclick=function(){ var header=['Word','Reading','Meaning','Book','CFI','SavedAt']; var rows=saved.map(e=>[e.word,e.reading||'',e.meaning||'',e.bookTitle||'',e.cfi||'', new Date(e.ts).toISOString()]); var tsv=[header.join('\t')].concat(rows.map(r=>r.map(s=>(s+'').replace(/\t/g,' ')).join('\t'))).join('\n'); var blob=new Blob([tsv],{type:'text/tab-separated-values'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='jp_words.tsv'; a.click(); };
+
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m])); }
+
+    // ---------- tests ----------
+    $('#runTests').onclick=function(){
+      var results=[], ok=(n,p)=>results.push((p?'✅':'❌')+' '+n);
+      try{
+        ok('escapeHtml encodes', /&lt;/.test(escapeHtml('<')) && /&gt;/.test(escapeHtml('>')) && /&amp;/.test(escapeHtml('&')));
+        var b=buildBoundaries(['私','は','学生']); ok('buildBoundaries length', b.length===3);
+        ok('findTokenIndex picks 2nd', findTokenIndex(b,1)===1);
+        var ctx=extractContext('今日は学校へ行きます。', [[0,2],[2,4],[4,6]], 1); ok('extractContext string', typeof ctx==='string' && ctx.length>0);
+        var seg=new TinySegmenter().segment('私は学生です'); ok('TinySegmenter tokens', Array.isArray(seg) && seg.length>0);
+        var testList=[{word:'テスト',reading:'てすと',meaning:'test',cfi:'epubcfi(/6/2[chap1]!/4/2[some\'id])',bookTitle:'BOOK',ts:Date.now()}];
+        var html=buildSavedHTML(testList); ok('buildSavedHTML renders', typeof html==='string' && html.length>0);
+        var csvLine = toCsvField('私,は')+','+toCsvField('意 味"テスト'); ok('CSV builder escapes', /^"私,は","意 味""テスト"$/.test(csvLine));
+        var threw=false; try{ jumpTo('epubcfi(/6/2)'); }catch(_e){ threw=true; } ok('jumpTo safe', !threw);
+        ok('ensureEpubJs exposed', typeof ensureEpubJs==='function');
+      }catch(e){ ok('Unexpected test error: '+e.message, false); }
+      $('#testLog').innerHTML=results.join('<br>');
+    };
+  })();
+  </script>
+</body>
+</html>
